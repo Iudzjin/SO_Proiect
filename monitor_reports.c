@@ -1,34 +1,40 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <signal.h>
 #include <fcntl.h>
 #include <string.h>
+#include <signal.h>
 
 volatile sig_atomic_t keep_running = 1;
 
 void handle_sigint(int sig) {
     keep_running = 0;
-    const char *msg = "\n[Monitor] Received SIGINT. Shutting down...\n";
+    const char *msg = "\nINFO: Semnal SIGINT primit. Se opreste executia...\n";
     write(STDOUT_FILENO, msg, strlen(msg));
 }
 
 void handle_sigusr1(int sig) {
-    const char *msg = "[Monitor] Received SIGUSR1: A new report has been added!\n";
+    const char *msg = "EVENT: A fost adaugat un raport nou in sistem!\n";
     write(STDOUT_FILENO, msg, strlen(msg));
 }
 
 int main() {
-    pid_t pid = getpid();
-
-    int fd = open(".monitor_pid", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int fd = open(".monitor_pid", O_RDWR | O_CREAT | O_EXCL, 0644);
     if (fd < 0) {
-        perror("Error creating .monitor_pid");
+        FILE *f = fopen(".monitor_pid", "r");
+        int existing_pid = -1;
+        if (f != NULL) {
+            fscanf(f, "%d", &existing_pid);
+            fclose(f);
+        }
+        printf("ERROR: Un alt monitor ruleaza deja cu PID-ul: %d\n", existing_pid);
+        fflush(stdout);
         return 1;
     }
 
+    pid_t my_pid = getpid();
     char pid_str[32];
-    snprintf(pid_str, sizeof(pid_str), "%d\n", pid);
+    snprintf(pid_str, sizeof(pid_str), "%d\n", my_pid);
     write(fd, pid_str, strlen(pid_str));
     close(fd);
 
@@ -44,14 +50,16 @@ int main() {
     sa_usr1.sa_flags = 0;
     sigaction(SIGUSR1, &sa_usr1, NULL);
 
-    printf("Monitor started with PID %d. Waiting for signals...\n", pid);
+    printf("SUCCESS: Monitor initializat (PID %d). Astept semnale...\n", my_pid);
+    fflush(stdout);
 
     while (keep_running) {
         pause();
     }
 
+    printf("INFO: Monitorul se opreste normal.\n");
+    fflush(stdout);
     unlink(".monitor_pid");
-    printf("[Monitor] .monitor_pid deleted. Exiting cleanly.\n");
 
     return 0;
 }
